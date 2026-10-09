@@ -1,0 +1,1219 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D立体切断 & 断面学習アプリ</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Three.js and OrbitControls -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Kosugi+Maru&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+        
+        body {
+            font-family: 'Noto Sans JP', 'Kosugi Maru', sans-serif;
+            background-color: #f8fafc;
+            user-select: none;
+            overflow: hidden;
+        }
+
+        .btn-action {
+            transition: all 0.15s ease-in-out;
+        }
+        .btn-action:active {
+            transform: scale(0.95);
+        }
+
+        /* Laser Canvas cursor styling */
+        #laserCanvas {
+            pointer-events: none;
+        }
+        .laser-active #laserCanvas {
+            pointer-events: auto;
+            cursor: crosshair;
+        }
+
+        .tool-btn.active {
+            border-color: #0284c7;
+            background-color: #e0f2fe;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 6px -1px rgba(14, 165, 233, 0.2);
+        }
+
+        /* Fullscreen Custom Layout Styles */
+        .is-fullscreen-mode #leftPanel {
+            display: contents !important;
+        }
+
+        .is-fullscreen-mode #panelShapeSelect,
+        .is-fullscreen-mode #panelSizeControls,
+        .is-fullscreen-mode #panelMainActions,
+        .is-fullscreen-mode #rightPanel {
+            display: none !important;
+        }
+
+        .is-fullscreen-mode #floatingControls {
+            position: absolute;
+            bottom: 1.25rem;
+            left: 1.25rem;
+            right: auto;
+            z-index: 40;
+            width: auto !important;
+        }
+
+        .is-fullscreen-mode #panelCutterControls {
+            position: absolute;
+            bottom: 4.75rem;
+            left: 1.25rem;
+            z-index: 30;
+            width: 17rem;
+            background: rgba(255, 255, 255, 0.94);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            border: 1px solid #e2e8f0;
+            padding: 0.85rem;
+            max-height: calc(100vh - 6.5rem);
+            overflow-y: auto;
+        }
+
+        /* Custom scrollbars */
+        ::-webkit-scrollbar {
+            width: 4px;
+            height: 4px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="bg-slate-100 h-screen w-screen flex items-center justify-center overflow-hidden p-0 sm:p-2">
+
+    <!-- Main Workspace Container (16:9 Aspect Ratio) -->
+    <div id="mainContainer" class="w-full h-full max-w-[177.77vh] max-h-[56.25vw] aspect-video bg-white flex overflow-hidden relative shadow-2xl rounded-xl border border-slate-200">
+
+        <!-- Left Panel: Shape Selection, Size Controls, Cutter Controls & Action Buttons -->
+        <aside id="leftPanel" class="w-80 bg-slate-50 border-r border-slate-200 p-2.5 flex flex-col justify-between overflow-y-auto z-10 select-none space-y-2 shrink-0 transition-all duration-300">
+            
+            <!-- 1. Shape Selection -->
+            <div id="panelShapeSelect" class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm space-y-2">
+                <div class="text-xs font-bold text-slate-700 flex items-center">
+                    <i class="fa-solid fa-shapes text-slate-500 mr-1.5"></i>立体を選択
+                </div>
+                <div class="grid grid-cols-5 gap-1">
+                    <button id="btnPrism" onclick="selectShape('prism')" class="shape-btn btn-action py-1 px-0.5 rounded-lg border border-slate-200 bg-slate-200 text-slate-800 font-bold text-[11px] flex flex-col items-center justify-center hover:bg-slate-300">
+                        <svg class="w-4 h-4 mb-0.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4 6v12l8 4 8-4V6l-8-4z"/><path d="M4 6l8 4 8-4"/><path d="M12 10v12"/></svg>角柱
+                    </button>
+                    <button id="btnPyramid" onclick="selectShape('pyramid')" class="shape-btn btn-action py-1 px-0.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 font-bold text-[11px] flex flex-col items-center justify-center hover:bg-slate-100">
+                        <svg class="w-4 h-4 mb-0.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L3 18l9 4 9-4L12 2z"/><path d="M12 2v20"/></svg>角すい
+                    </button>
+                    <button id="btnCylinder" onclick="selectShape('cylinder')" class="shape-btn btn-action py-1 px-0.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 font-bold text-[11px] flex flex-col items-center justify-center hover:bg-slate-100">
+                        <svg class="w-4 h-4 mb-0.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="7" ry="2.5"/><path d="M5 5v14c0 1.38 3.13 2.5 7 2.5s7-1.12 7-2.5V5"/></svg>円柱
+                    </button>
+                    <button id="btnCone" onclick="selectShape('cone')" class="shape-btn btn-action py-1 px-0.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 font-bold text-[11px] flex flex-col items-center justify-center hover:bg-slate-100">
+                        <svg class="w-4 h-4 mb-0.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L5 18"/><path d="M12 2l7 18"/><polygon points="5,18 9,21 15,21 19,18" /></svg>円すい
+                    </button>
+                    <button id="btnSphere" onclick="selectShape('sphere')" class="shape-btn btn-action py-1 px-0.5 rounded-lg border border-slate-200 bg-slate-50 text-slate-600 font-bold text-[11px] flex flex-col items-center justify-center hover:bg-slate-100">
+                        <svg class="w-4 h-4 mb-0.5 stroke-current fill-none" viewBox="0 0 24 24" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3"/></svg>球
+                    </button>
+                </div>
+                <div class="border-t border-slate-100 pt-1.5 space-y-1">
+                    <label class="flex items-center justify-between text-[11px] font-bold text-slate-700 cursor-pointer">
+                        <span>辺だけにする</span>
+                        <input id="chkEdgesOnly" type="checkbox" onchange="toggleEdgesOnly()" class="w-3.5 h-3.5 text-slate-600 rounded accent-slate-600">
+                    </label>
+                    <label class="flex items-center justify-between text-[11px] font-bold text-slate-700 cursor-pointer">
+                        <span>立体を透かす</span>
+                        <input id="chkTransparent" type="checkbox" checked onchange="toggleTransparent()" class="w-3.5 h-3.5 text-slate-600 rounded accent-slate-600">
+                    </label>
+                </div>
+            </div>
+
+            <!-- 2. Shape Parameters Controls -->
+            <div id="panelSizeControls" class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm space-y-1.5">
+                <div class="text-xs font-bold text-slate-700 flex items-center">
+                    <i class="fa-solid fa-sliders text-slate-500 mr-1.5"></i>立体のサイズ
+                </div>
+                
+                <!-- Base Vertices (N-gon) -->
+                <div id="paramSidesContainer" class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>底面の角の数</span>
+                        <span id="valSides" class="text-slate-800 font-bold">四角形</span>
+                    </div>
+                    <input id="sliderSides" type="range" min="3" max="8" value="4" step="1" oninput="updateGeometry()" class="w-full h-1.5 accent-slate-600 cursor-pointer">
+                </div>
+
+                <!-- Radius / Width -->
+                <div id="paramRadiusContainer" class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>半径 / 大きさ</span>
+                        <span id="valRadius" class="text-slate-800 font-bold">2.0</span>
+                    </div>
+                    <input id="sliderRadius" type="range" min="1.0" max="3.5" value="2.0" step="0.1" oninput="updateGeometry()" class="w-full h-1.5 accent-slate-600 cursor-pointer">
+                </div>
+
+                <!-- Height -->
+                <div id="paramHeightContainer" class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>高さ</span>
+                        <span id="valHeight" class="text-slate-800 font-bold">4.0</span>
+                    </div>
+                    <input id="sliderHeight" type="range" min="1.0" max="5.0" value="4.0" step="0.1" oninput="updateGeometry()" class="w-full h-1.5 accent-slate-600 cursor-pointer">
+                </div>
+            </div>
+
+            <!-- 3. Cutter Controls -->
+            <div id="panelCutterControls" class="bg-white p-2.5 rounded-xl border border-slate-200 shadow-sm space-y-1.5">
+                <div class="text-xs font-bold text-slate-700 flex items-center">
+                    <i class="fa-solid fa-scissors text-sky-500 mr-1.5"></i>カッター（面）操作
+                </div>
+                
+                <!-- Toggle Cutter Visibility Button -->
+                <button id="btnToggleCutter" onclick="toggleCutterVisibility()" class="w-full btn-action py-1.5 rounded-lg border border-sky-200 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-scissors text-sky-500 mr-1"></i>
+                    <span id="txtToggleCutter">カッターを表示</span>
+                </button>
+
+                <div class="grid grid-cols-3 gap-1">
+                    <button onclick="setCutterPreset('horizontal')" class="btn-action py-1 rounded-lg border border-sky-100 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center">
+                        すいへい
+                    </button>
+                    <button onclick="setCutterPreset('diagonal')" class="btn-action py-1 rounded-lg border border-sky-100 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center">
+                        ななめ
+                    </button>
+                    <button onclick="setCutterPreset('vertical')" class="btn-action py-1 rounded-lg border border-sky-100 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center">
+                        たて
+                    </button>
+                </div>
+
+                <!-- Height Pos Slider -->
+                <div class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>位置 (高さ)</span>
+                        <span id="valCutterY" class="text-sky-600 font-bold">0.0</span>
+                    </div>
+                    <input id="sliderCutterY" type="range" min="-2.5" max="2.5" value="0.0" step="0.05" oninput="updateCutterFromUI()" class="w-full h-1.5 accent-sky-500 cursor-pointer">
+                </div>
+
+                <!-- Tilt X Slider (前後) -->
+                <div class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>傾き (前後)</span>
+                        <span id="valCutterRotX" class="text-sky-600 font-bold">0°</span>
+                    </div>
+                    <input id="sliderCutterRotX" type="range" min="-90" max="90" value="0" step="1" oninput="updateCutterFromUI()" class="w-full h-1.5 accent-sky-500 cursor-pointer">
+                </div>
+
+                <!-- Tilt Z Slider (左右) -->
+                <div class="space-y-0.5">
+                    <div class="flex justify-between text-[11px] font-semibold text-slate-600">
+                        <span>傾き (左右)</span>
+                        <span id="valCutterRotZ" class="text-sky-600 font-bold">0°</span>
+                    </div>
+                    <input id="sliderCutterRotZ" type="range" min="-90" max="90" value="0" step="1" oninput="updateCutterFromUI()" class="w-full h-1.5 accent-sky-500 cursor-pointer">
+                </div>
+
+                <button onclick="resetCutter()" class="w-full btn-action py-1 rounded-lg border border-sky-100 bg-sky-50 hover:bg-sky-100 text-sky-700 text-[11px] font-bold flex items-center justify-center space-x-1">
+                    <i class="fa-solid fa-rotate-left mr-1"></i>カッター位置リセット
+                </button>
+            </div>
+
+            <!-- 4. Main Action Buttons Panel -->
+            <div id="panelMainActions" class="bg-white p-2 rounded-xl border border-slate-200 shadow-sm">
+                <div class="grid grid-cols-3 gap-1.5">
+                    <button onclick="handleBtnStartFromBeginning()" class="btn-action py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px] flex flex-col items-center justify-center space-y-1">
+                        <i class="fa-solid fa-arrow-rotate-left text-slate-500 text-sm"></i>
+                        <span>はじめから</span>
+                    </button>
+                    <button onclick="handleBtnSnapshot()" class="btn-action py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px] flex flex-col items-center justify-center space-y-1">
+                        <i class="fa-solid fa-camera text-slate-500 text-sm"></i>
+                        <span>カメラ</span>
+                    </button>
+                    <button id="btnLaser" onclick="toggleTool('laser')" class="tool-btn btn-action py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-[11px] flex flex-col items-center justify-center space-y-1">
+                        <i class="fa-solid fa-bullseye text-rose-500 text-sm"></i>
+                        <span>レーザー</span>
+                    </button>
+                </div>
+            </div>
+
+        </aside>
+
+        <!-- Center Viewport: 3D Canvas -->
+        <main id="viewportContainer" class="flex-1 relative bg-slate-50 overflow-hidden">
+            <!-- 3D Three.js WebGL Canvas Container -->
+            <div id="canvas3dContainer" class="w-full h-full absolute inset-0"></div>
+
+            <!-- Laser Pointer Annotation Canvas -->
+            <canvas id="laserCanvas" class="w-full h-full absolute inset-0 z-10 pointer-events-none"></canvas>
+
+            <!-- Floating 3D Navigation Controls Widget -->
+            <div id="floatingControls" class="absolute bottom-4 right-4 z-20 inline-flex items-center space-x-1.5 bg-white/90 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200 shadow-md w-max">
+                <button id="btnFullscreen" onclick="toggleFullscreen3D()" title="全画面表示" class="btn-action px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center space-x-1 shrink-0">
+                    <i class="fa-solid fa-expand text-slate-600"></i>
+                    <span id="txtFullscreen">全画面</span>
+                </button>
+                <button onclick="resetCamera()" title="視点をリセット" class="btn-action px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center space-x-1 shrink-0">
+                    <i class="fa-solid fa-video text-slate-600"></i>
+                    <span>正面視点</span>
+                </button>
+                <button onclick="setTopView()" title="真上から見る" class="btn-action px-3 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700 flex items-center space-x-1 shrink-0">
+                    <i class="fa-solid fa-eye text-slate-600"></i>
+                    <span>真上視点</span>
+                </button>
+            </div>
+        </main>
+
+        <!-- Right Panel: 3:2 Ratio 2D Cross Section View -->
+        <aside id="rightPanel" class="w-80 bg-slate-50 border-l border-slate-200 p-3 flex flex-col items-center justify-start overflow-hidden z-20 select-none shrink-0">
+            
+            <div class="bg-white p-3.5 rounded-xl border border-slate-200 shadow-sm flex flex-col items-center w-full">
+                <!-- Title Header -->
+                <div class="w-full text-center mb-3 flex-shrink-0 flex items-center justify-center">
+                    <h2 class="text-sm font-bold text-slate-700 tracking-wide">断面図</h2>
+                </div>
+                
+                <!-- 2D Canvas 3:2 Aspect Ratio Box (縦:横 = 3:2) -->
+                <div id="crossSectionBox" class="w-full aspect-[2/3] bg-white rounded-xl relative flex items-center justify-center p-1 overflow-hidden border border-slate-200 shadow-inner">
+                    <canvas id="crossSection2DCanvas" class="w-full h-full object-contain"></canvas>
+                </div>
+            </div>
+
+        </aside>
+    </div>
+
+    <!-- Notification / Toast Message Box -->
+    <div id="toast" class="fixed top-5 left-1/2 -translate-x-1/2 bg-slate-800/90 backdrop-blur text-white px-4 py-2 rounded-xl text-xs font-bold opacity-0 transition-opacity duration-300 pointer-events-none z-50 shadow-lg">
+        メッセージ
+    </div>
+
+    <script>
+        /* --- GLOBAL APP STATE & THREE.JS VARIABLES --- */
+        var scene, camera, renderer, controls;
+        var mainMesh, wireframeMesh, capMesh, cutterMesh;
+        var gridHelper;
+        var isCutterVisible = false;
+        var isEdgesOnly = false;
+        var isTransparent = true;
+
+        // Geometry Params
+        var currentShape = 'prism'; // prism, pyramid, cylinder, cone, sphere
+        var sides = 4;
+        var radius = 2.0;
+        var height = 4.0;
+        
+        // Cutter Plane Params
+        var cutterPosY = 0.0;
+        var cutterRotX = 0; // degrees
+        var cutterRotZ = 0; // degrees
+
+        // Kanji side names mapping
+        var kanjiSides = {
+            3: "三角形",
+            4: "四角形",
+            5: "五角形",
+            6: "六角形",
+            7: "七角形",
+            8: "八角形"
+        };
+
+        // 2D Canvas Context
+        var canvas2D, ctx2D;
+
+        // Laser Tool State
+        var currentTool = null; // 'laser' or null
+        var laserCanvas, laserCtx;
+        var laserPoints = [];
+        var isLaserMouseDown = false;
+
+        window.onload = function() {
+            init3DScene();
+            initLaserOverlay();
+            init2DCanvas();
+            updateGeometry();
+            animate();
+            
+            setTimeout(onWindowResize, 50);
+            window.addEventListener('resize', onWindowResize);
+            
+            // Fullscreen change listener
+            document.addEventListener('fullscreenchange', handleFullscreenChange);
+            document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+        };
+
+        function init3DScene() {
+            const container = document.getElementById('canvas3dContainer');
+            if (!container) return;
+            
+            // Scene Setup
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf8fafc);
+
+            // Camera Setup: Angle focused on prism aligned with grid
+            camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(4.8, 4.2, 7.2);
+
+            // Renderer Setup
+            renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            container.appendChild(renderer.domElement);
+
+            // Orbit Controls
+            controls = new THREE.OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.maxDistance = 25;
+            controls.minDistance = 2;
+
+            // Studio Lighting
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
+            scene.add(ambientLight);
+
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
+            dirLight.position.set(8, 12, 10);
+            dirLight.castShadow = true;
+            dirLight.shadow.mapSize.width = 1024;
+            dirLight.shadow.mapSize.height = 1024;
+            scene.add(dirLight);
+
+            const fillLight = new THREE.DirectionalLight(0x94a3b8, 0.4);
+            fillLight.position.set(-8, 5, -8);
+            scene.add(fillLight);
+
+            // Grid Helper positioned at base of solid
+            gridHelper = new THREE.GridHelper(14, 14, 0xcbd5e1, 0xe2e8f0);
+            gridHelper.position.y = -2.0;
+            scene.add(gridHelper);
+
+            // Cutter Mesh (Semi-transparent sky blue plane)
+            createCutterVisualMesh();
+        }
+
+        function createCutterVisualMesh() {
+            const geometry = new THREE.PlaneGeometry(6.5, 6.5);
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x38bdf8,
+                transparent: true,
+                opacity: 0.45,
+                depthWrite: false,
+                side: THREE.DoubleSide,
+                roughness: 0.1
+            });
+            cutterMesh = new THREE.Mesh(geometry, material);
+            cutterMesh.rotation.x = Math.PI / 2;
+            cutterMesh.renderOrder = 10;
+            cutterMesh.visible = false;
+            scene.add(cutterMesh);
+        }
+
+        function updateCutterSize() {
+            if (!cutterMesh) return;
+            const shapeDiagonal = Math.hypot(radius * 2, height);
+            const cutterSize = Math.max(shapeDiagonal * 1.5, 6.5);
+            if (cutterMesh.geometry) cutterMesh.geometry.dispose();
+            cutterMesh.geometry = new THREE.PlaneGeometry(cutterSize, cutterSize);
+        }
+
+        function selectShape(shapeType) {
+            currentShape = shapeType;
+            
+            document.querySelectorAll('.shape-btn').forEach(btn => {
+                btn.classList.remove('bg-slate-200', 'text-slate-800');
+                btn.classList.add('bg-slate-50', 'text-slate-600');
+            });
+            
+            const btnMap = {
+                prism: 'btnPrism',
+                pyramid: 'btnPyramid',
+                cylinder: 'btnCylinder',
+                cone: 'btnCone',
+                sphere: 'btnSphere'
+            };
+            const activeBtn = document.getElementById(btnMap[shapeType]);
+            if (activeBtn) {
+                activeBtn.classList.remove('bg-slate-50', 'text-slate-600');
+                activeBtn.classList.add('bg-slate-200', 'text-slate-800');
+            }
+
+            const sidesContainer = document.getElementById('paramSidesContainer');
+            const heightContainer = document.getElementById('paramHeightContainer');
+
+            if (shapeType === 'prism' || shapeType === 'pyramid') {
+                sidesContainer.style.display = 'block';
+            } else {
+                sidesContainer.style.display = 'none';
+            }
+
+            if (shapeType === 'sphere') {
+                heightContainer.style.display = 'none';
+            } else {
+                heightContainer.style.display = 'block';
+            }
+
+            updateGeometry();
+        }
+
+        function updateGeometry() {
+            sides = parseInt(document.getElementById('sliderSides').value);
+            radius = parseFloat(document.getElementById('sliderRadius').value);
+            height = parseFloat(document.getElementById('sliderHeight').value);
+
+            // Update UI Labels
+            document.getElementById('valSides').innerText = kanjiSides[sides] || `${sides}角形`;
+            document.getElementById('valRadius').innerText = radius.toFixed(1);
+            document.getElementById('valHeight').innerText = height.toFixed(1);
+
+            if (gridHelper) {
+                gridHelper.position.y = (currentShape === 'sphere') ? -radius : -height / 2;
+            }
+
+            // Dispose old meshes safely
+            if (mainMesh) {
+                scene.remove(mainMesh);
+                if (mainMesh.geometry) mainMesh.geometry.dispose();
+                if (mainMesh.material) mainMesh.material.dispose();
+                mainMesh = null;
+            }
+            if (wireframeMesh) {
+                scene.remove(wireframeMesh);
+                if (wireframeMesh.geometry) wireframeMesh.geometry.dispose();
+                if (wireframeMesh.material) wireframeMesh.material.dispose();
+                wireframeMesh = null;
+            }
+
+            let geometry;
+            const isCurved = (currentShape === 'cylinder' || currentShape === 'cone' || currentShape === 'sphere');
+
+            if (currentShape === 'prism') {
+                geometry = new THREE.CylinderGeometry(radius, radius, height, sides);
+                geometry.rotateY(Math.PI / 4);
+            } else if (currentShape === 'pyramid') {
+                geometry = new THREE.ConeGeometry(radius, height, sides);
+                geometry.rotateY(Math.PI / 4);
+            } else if (currentShape === 'cylinder') {
+                geometry = new THREE.CylinderGeometry(radius, radius, height, 128);
+            } else if (currentShape === 'cone') {
+                geometry = new THREE.ConeGeometry(radius, height, 128);
+            } else if (currentShape === 'sphere') {
+                geometry = new THREE.SphereGeometry(radius, 128, 128);
+            }
+
+            // Neutral Slate Gray Material (0x94a3b8)
+            const material = new THREE.MeshStandardMaterial({
+                color: 0x94a3b8,
+                transparent: isTransparent,
+                opacity: isTransparent ? 0.65 : 1.0,
+                roughness: 0.35,
+                metalness: 0.1,
+                side: THREE.DoubleSide
+            });
+
+            mainMesh = new THREE.Mesh(geometry, material);
+            mainMesh.castShadow = true;
+            mainMesh.receiveShadow = true;
+            mainMesh.visible = !isEdgesOnly;
+            scene.add(mainMesh);
+
+            // Wireframe / Outline
+            if (!isCurved) {
+                const edgeGeo = new THREE.EdgesGeometry(geometry);
+                const edgeMat = new THREE.LineBasicMaterial({
+                    color: isEdgesOnly ? 0x334155 : 0x475569,
+                    linewidth: isEdgesOnly ? 2.5 : 1.5
+                });
+                wireframeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+                scene.add(wireframeMesh);
+            } else if (isEdgesOnly) {
+                const edgeGeo = new THREE.EdgesGeometry(geometry, 30);
+                const edgeMat = new THREE.LineBasicMaterial({ color: 0x334155, linewidth: 2.0 });
+                wireframeMesh = new THREE.LineSegments(edgeGeo, edgeMat);
+                scene.add(wireframeMesh);
+            }
+
+            updateCutterSize();
+            updateCutterFromUI();
+        }
+
+        function toggleEdgesOnly() {
+            isEdgesOnly = document.getElementById('chkEdgesOnly').checked;
+            updateGeometry();
+        }
+
+        function toggleTransparent() {
+            isTransparent = document.getElementById('chkTransparent').checked;
+            if (mainMesh && mainMesh.material) {
+                mainMesh.material.transparent = isTransparent;
+                mainMesh.material.opacity = isTransparent ? 0.65 : 1.0;
+                mainMesh.material.needsUpdate = true;
+            }
+        }
+
+        function toggleCutterVisibility() {
+            isCutterVisible = !isCutterVisible;
+            const btnTxt = document.getElementById('txtToggleCutter');
+            
+            if (isCutterVisible) {
+                btnTxt.innerText = "カッターを隠す";
+                if (cutterMesh) cutterMesh.visible = true;
+            } else {
+                btnTxt.innerText = "カッターを表示";
+                if (cutterMesh) cutterMesh.visible = false;
+            }
+
+            if (mainMesh && mainMesh.material) {
+                mainMesh.material.color.setHex(0x94a3b8);
+                mainMesh.material.needsUpdate = true;
+            }
+
+            updateCutterFromUI();
+        }
+
+        function setCutterPreset(preset) {
+            if (!isCutterVisible) toggleCutterVisibility();
+
+            if (preset === 'horizontal') {
+                cutterPosY = 0.0;
+                cutterRotX = 0;
+                cutterRotZ = 0;
+            } else if (preset === 'diagonal') {
+                cutterPosY = 0.0;
+                cutterRotX = 45;
+                cutterRotZ = 0;
+            } else if (preset === 'vertical') {
+                cutterPosY = 0.0;
+                cutterRotX = 90;
+                cutterRotZ = 0;
+            }
+
+            document.getElementById('sliderCutterY').value = cutterPosY;
+            document.getElementById('sliderCutterRotX').value = cutterRotX;
+            document.getElementById('sliderCutterRotZ').value = cutterRotZ;
+            updateCutterFromUI();
+        }
+
+        function updateCutterFromUI() {
+            cutterPosY = parseFloat(document.getElementById('sliderCutterY').value);
+            cutterRotX = parseFloat(document.getElementById('sliderCutterRotX').value);
+            cutterRotZ = parseFloat(document.getElementById('sliderCutterRotZ').value);
+
+            document.getElementById('valCutterY').innerText = cutterPosY.toFixed(2);
+            document.getElementById('valCutterRotX').innerText = `${cutterRotX}°`;
+            document.getElementById('valCutterRotZ').innerText = `${cutterRotZ}°`;
+
+            const radX = (cutterRotX * Math.PI) / 180;
+            const radZ = (cutterRotZ * Math.PI) / 180;
+
+            if (cutterMesh) {
+                cutterMesh.position.set(0, cutterPosY, 0);
+
+                // Construct clean Pitch (radX around World X) and Roll (radZ around World Z)
+                const qX = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), radX);
+                const qZ = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), radZ);
+                const qBase = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);
+
+                const qFinal = new THREE.Quaternion();
+                qFinal.multiplyQuaternions(qZ, qX).multiply(qBase);
+
+                cutterMesh.quaternion.copy(qFinal);
+                cutterMesh.updateMatrixWorld(true);
+            }
+
+            // Normal vector calculation using cutterMesh quaternion
+            const normal = new THREE.Vector3(0, 0, 1);
+            if (cutterMesh) {
+                normal.applyQuaternion(cutterMesh.quaternion).normalize();
+            }
+            const point = new THREE.Vector3(0, cutterPosY, 0);
+
+            calculateAndDrawCrossSection(point, normal);
+        }
+
+        function resetCutter() {
+            document.getElementById('sliderCutterY').value = 0.0;
+            document.getElementById('sliderCutterRotX').value = 0;
+            document.getElementById('sliderCutterRotZ').value = 0;
+            updateCutterFromUI();
+        }
+
+        function calculateAndDrawCrossSection(planePoint, planeNormal) {
+            // Remove old cap mesh safely
+            if (capMesh) {
+                scene.remove(capMesh);
+                if (capMesh.geometry) capMesh.geometry.dispose();
+                if (capMesh.material) capMesh.material.dispose();
+                capMesh = null;
+            }
+
+            if (!isCutterVisible) {
+                render2DCrossSection([]);
+                return;
+            }
+
+            // Construct strict orthonormal basis (uAxis, vAxis) on the cutting plane
+            let uAxis = new THREE.Vector3();
+            if (Math.abs(planeNormal.y) < 0.99) {
+                uAxis.crossVectors(new THREE.Vector3(0, 1, 0), planeNormal).normalize();
+            } else {
+                uAxis.crossVectors(new THREE.Vector3(1, 0, 0), planeNormal).normalize();
+            }
+            let vAxis = new THREE.Vector3().crossVectors(planeNormal, uAxis).normalize();
+
+            let intersectionPoints = [];
+
+            // Special analytical intersection for Sphere
+            if (currentShape === 'sphere') {
+                const distToCenter = Math.abs(planePoint.dot(planeNormal));
+                if (distToCenter < radius - 0.001) {
+                    const cutRadius = Math.sqrt(radius * radius - distToCenter * distToCenter);
+                    const steps = 64;
+                    for (let i = 0; i < steps; i++) {
+                        const ang = (i * 2 * Math.PI) / steps;
+                        intersectionPoints.push({
+                            u: cutRadius * Math.cos(ang),
+                            v: cutRadius * Math.sin(ang)
+                        });
+                    }
+
+                    // Create 3D Cap Mesh inside sphere
+                    const capGeo = new THREE.CircleGeometry(cutRadius, 64);
+                    const capMat = new THREE.MeshStandardMaterial({
+                        color: 0x0ea5e9, // Sky Blue
+                        side: THREE.DoubleSide,
+                        roughness: 0.2,
+                        metalness: 0.1,
+                        polygonOffset: true,
+                        polygonOffsetFactor: -1,
+                        polygonOffsetUnits: -1
+                    });
+                    capMesh = new THREE.Mesh(capGeo, capMat);
+
+                    const matrix = new THREE.Matrix4();
+                    matrix.makeBasis(uAxis, vAxis, planeNormal);
+                    matrix.setPosition(planePoint);
+                    capMesh.applyMatrix4(matrix);
+                    capMesh.renderOrder = 5;
+                    scene.add(capMesh);
+                }
+            } else {
+                const plane = new THREE.Plane();
+                plane.setFromNormalAndCoplanarPoint(planeNormal, planePoint);
+
+                const lineSegments = generateShapeEdgeSegments();
+                const raw3DPoints = [];
+
+                lineSegments.forEach(seg => {
+                    const line = new THREE.Line3(seg.start, seg.end);
+                    const target = new THREE.Vector3();
+
+                    if (plane.intersectLine(line, target)) {
+                        const isDup = raw3DPoints.some(pt => pt.distanceTo(target) < 0.001);
+                        if (!isDup) {
+                            raw3DPoints.push(target);
+                        }
+                    }
+                });
+
+                if (raw3DPoints.length >= 3) {
+                    const planeCenter = planePoint.clone();
+
+                    const projected = raw3DPoints.map(p => {
+                        const vec = p.clone().sub(planeCenter);
+                        return { u: vec.dot(uAxis), v: vec.dot(vAxis) };
+                    });
+
+                    // Remove 2D duplicates
+                    const unique2D = [];
+                    projected.forEach(pt => {
+                        if (!unique2D.some(u => Math.hypot(u.u - pt.u, u.v - pt.v) < 0.001)) {
+                            unique2D.push(pt);
+                        }
+                    });
+
+                    if (unique2D.length >= 3) {
+                        const centroid = unique2D.reduce((acc, curr) => ({ u: acc.u + curr.u, v: acc.v + curr.v }), { u: 0, v: 0 });
+                        centroid.u /= unique2D.length;
+                        centroid.v /= unique2D.length;
+
+                        unique2D.sort((a, b) => {
+                            const angleA = Math.atan2(a.v - centroid.v, a.u - centroid.u);
+                            const angleB = Math.atan2(b.v - centroid.v, b.u - centroid.u);
+                            return angleA - angleB;
+                        });
+
+                        // Calculate 2D Area to prevent degenerate geometries
+                        let area = 0;
+                        for (let i = 0; i < unique2D.length; i++) {
+                            const j = (i + 1) % unique2D.length;
+                            area += unique2D[i].u * unique2D[j].v;
+                            area -= unique2D[j].u * unique2D[i].v;
+                        }
+                        area = Math.abs(area) / 2;
+
+                        if (area >= 0.001) {
+                            intersectionPoints = unique2D;
+
+                            // Build 3D Sky Blue Cap Mesh inside solid
+                            try {
+                                const shape3D = new THREE.Shape();
+                                intersectionPoints.forEach((p, idx) => {
+                                    if (idx === 0) shape3D.moveTo(p.u, p.v);
+                                    else shape3D.lineTo(p.u, p.v);
+                                });
+                                shape3D.closePath();
+
+                                const capGeo = new THREE.ShapeGeometry(shape3D);
+                                const capMat = new THREE.MeshStandardMaterial({
+                                    color: 0x0ea5e9, // Sky Blue
+                                    side: THREE.DoubleSide,
+                                    roughness: 0.2,
+                                    metalness: 0.1,
+                                    polygonOffset: true,
+                                    polygonOffsetFactor: -1,
+                                    polygonOffsetUnits: -1
+                                });
+
+                                capMesh = new THREE.Mesh(capGeo, capMat);
+
+                                const matrix = new THREE.Matrix4();
+                                matrix.makeBasis(uAxis, vAxis, planeNormal);
+                                matrix.setPosition(planePoint);
+                                capMesh.applyMatrix4(matrix);
+                                capMesh.renderOrder = 5;
+
+                                scene.add(capMesh);
+                            } catch (err) {
+                                // Ignore degenerate triangulation errors gracefully
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Render 2D View
+            render2DCrossSection(intersectionPoints.map(p => ({ x: p.u, y: p.v })));
+        }
+
+        function generateShapeEdgeSegments() {
+            const segments = [];
+            const N = (currentShape === 'cylinder' || currentShape === 'cone') ? 64 : sides;
+            const hHalf = height / 2;
+
+            // Apply Math.PI / 4 angle offset for prism and pyramid to exactly match rendering mesh rotation
+            const angleOffset = (currentShape === 'prism' || currentShape === 'pyramid') ? Math.PI / 4 : 0;
+
+            if (currentShape === 'prism' || currentShape === 'cylinder') {
+                const topVerts = [];
+                const botVerts = [];
+                for (let i = 0; i < N; i++) {
+                    const angle = (i * 2 * Math.PI) / N + angleOffset;
+                    const x = radius * Math.cos(angle);
+                    const z = radius * Math.sin(angle);
+                    topVerts.push(new THREE.Vector3(x, hHalf, z));
+                    botVerts.push(new THREE.Vector3(x, -hHalf, z));
+                }
+
+                for (let i = 0; i < N; i++) {
+                    const next = (i + 1) % N;
+                    segments.push({ start: topVerts[i], end: topVerts[next] });
+                    segments.push({ start: botVerts[i], end: botVerts[next] });
+                    segments.push({ start: botVerts[i], end: topVerts[i] });
+                }
+            } else if (currentShape === 'pyramid' || currentShape === 'cone') {
+                const apex = new THREE.Vector3(0, hHalf, 0);
+                const botVerts = [];
+                for (let i = 0; i < N; i++) {
+                    const angle = (i * 2 * Math.PI) / N + angleOffset;
+                    const x = radius * Math.cos(angle);
+                    const z = radius * Math.sin(angle);
+                    botVerts.push(new THREE.Vector3(x, -hHalf, z));
+                }
+
+                for (let i = 0; i < N; i++) {
+                    const next = (i + 1) % N;
+                    segments.push({ start: botVerts[i], end: botVerts[next] });
+                    segments.push({ start: botVerts[i], end: apex });
+                }
+            }
+
+            return segments;
+        }
+
+        function init2DCanvas() {
+            canvas2D = document.getElementById('crossSection2DCanvas');
+            if (!canvas2D) return;
+            ctx2D = canvas2D.getContext('2d');
+            resize2DCanvas();
+        }
+
+        function resize2DCanvas() {
+            const box = document.getElementById('crossSectionBox');
+            if (box && canvas2D) {
+                canvas2D.width = box.clientWidth * window.devicePixelRatio;
+                canvas2D.height = box.clientHeight * window.devicePixelRatio;
+            }
+        }
+
+        function render2DCrossSection(points2D) {
+            if (!ctx2D) return;
+            resize2DCanvas();
+
+            const w = canvas2D.width;
+            const h = canvas2D.height;
+
+            // Clear Background to Pure White
+            ctx2D.clearRect(0, 0, w, h);
+            ctx2D.fillStyle = '#ffffff';
+            ctx2D.fillRect(0, 0, w, h);
+
+            // Draw Subtle Grid Lines
+            ctx2D.strokeStyle = 'rgba(226, 232, 240, 0.8)';
+            ctx2D.lineWidth = 1 * window.devicePixelRatio;
+            const gridSize = 24 * window.devicePixelRatio;
+            for (let x = 0; x < w; x += gridSize) {
+                ctx2D.beginPath();
+                ctx2D.moveTo(x, 0);
+                ctx2D.lineTo(x, h);
+                ctx2D.stroke();
+            }
+            for (let y = 0; y < h; y += gridSize) {
+                ctx2D.beginPath();
+                ctx2D.moveTo(0, y);
+                ctx2D.lineTo(w, y);
+                ctx2D.stroke();
+            }
+
+            // Draw Subtle Center Axes
+            ctx2D.strokeStyle = 'rgba(203, 213, 225, 0.9)';
+            ctx2D.lineWidth = 1.5 * window.devicePixelRatio;
+            ctx2D.beginPath();
+            ctx2D.moveTo(w / 2, 0);
+            ctx2D.lineTo(w / 2, h);
+            ctx2D.moveTo(0, h / 2);
+            ctx2D.lineTo(w, h / 2);
+            ctx2D.stroke();
+
+            if (!points2D || points2D.length < 3) {
+                return;
+            }
+
+            const n = points2D.length;
+
+            // Compute centroid of current cross-section slice
+            let sumX = 0, sumY = 0;
+            points2D.forEach(p => {
+                sumX += p.x;
+                sumY += p.y;
+            });
+            const centerX = sumX / n;
+            const centerY = sumY / n;
+
+            // Fix scale relative to overall solid maximum dimension
+            // This ensures cut sizes dynamically shrink and grow proportionally
+            const maxSolidDimension = Math.max(radius * 2.5, height * 1.2, Math.hypot(radius * 2, height));
+            const scale = (Math.min(w, h) * 0.78) / maxSolidDimension;
+
+            ctx2D.save();
+            ctx2D.translate(w / 2, h / 2);
+
+            // Draw Cross Section Polygon Fill
+            ctx2D.beginPath();
+            points2D.forEach((p, idx) => {
+                const px = (p.x - centerX) * scale;
+                const py = -(p.y - centerY) * scale;
+                if (idx === 0) ctx2D.moveTo(px, py);
+                else ctx2D.lineTo(px, py);
+            });
+            ctx2D.closePath();
+
+            // Sky Blue Gradient Fill
+            const maxR = Math.min(w, h) * 0.4;
+            const grad = ctx2D.createRadialGradient(0, 0, 5, 0, 0, Math.max(maxR, 10));
+            grad.addColorStop(0, 'rgba(56, 189, 248, 0.95)');
+            grad.addColorStop(1, 'rgba(2, 132, 199, 0.88)');
+            ctx2D.fillStyle = grad;
+            ctx2D.fill();
+
+            // Stroke Outline
+            ctx2D.strokeStyle = '#0284c7';
+            ctx2D.lineWidth = 3.5 * window.devicePixelRatio;
+            ctx2D.stroke();
+
+            // Draw Vertices
+            if (n <= 12) {
+                points2D.forEach(p => {
+                    const px = (p.x - centerX) * scale;
+                    const py = -(p.y - centerY) * scale;
+                    ctx2D.beginPath();
+                    ctx2D.arc(px, py, 4.5 * window.devicePixelRatio, 0, Math.PI * 2);
+                    ctx2D.fillStyle = '#ffffff';
+                    ctx2D.fill();
+                    ctx2D.strokeStyle = '#0369a1';
+                    ctx2D.lineWidth = 2 * window.devicePixelRatio;
+                    ctx2D.stroke();
+                });
+            }
+
+            ctx2D.restore();
+        }
+
+        function initLaserOverlay() {
+            laserCanvas = document.getElementById('laserCanvas');
+            if (!laserCanvas) return;
+            laserCtx = laserCanvas.getContext('2d');
+            resizeLaserCanvas();
+
+            const viewport = document.getElementById('viewportContainer');
+
+            viewport.addEventListener('mousedown', (e) => {
+                if (currentTool === 'laser') {
+                    isLaserMouseDown = true;
+                    laserPoints = [];
+                    addLaserPoint(e);
+                }
+            });
+
+            viewport.addEventListener('mousemove', (e) => {
+                if (currentTool === 'laser' && isLaserMouseDown) {
+                    addLaserPoint(e);
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isLaserMouseDown = false;
+            });
+
+            viewport.addEventListener('touchstart', (e) => {
+                if (currentTool === 'laser' && e.touches.length > 0) {
+                    isLaserMouseDown = true;
+                    laserPoints = [];
+                    addLaserPoint(e.touches[0]);
+                }
+            });
+
+            viewport.addEventListener('touchmove', (e) => {
+                if (currentTool === 'laser' && isLaserMouseDown && e.touches.length > 0) {
+                    addLaserPoint(e.touches[0]);
+                }
+            });
+
+            viewport.addEventListener('touchend', () => {
+                isLaserMouseDown = false;
+            });
+        }
+
+        function resizeLaserCanvas() {
+            const container = document.getElementById('viewportContainer');
+            if (container && laserCanvas) {
+                laserCanvas.width = container.clientWidth;
+                laserCanvas.height = container.clientHeight;
+            }
+        }
+
+        function addLaserPoint(e) {
+            const rect = laserCanvas.getBoundingClientRect();
+            const x = e.clientX - rect.left;
+            const y = e.clientY - rect.top;
+
+            laserPoints.push({ x, y, alpha: 1.0 });
+            if (laserPoints.length > 75) laserPoints.shift();
+        }
+
+        function drawLaserTrail() {
+            if (!laserCtx) return;
+            laserCtx.clearRect(0, 0, laserCanvas.width, laserCanvas.height);
+
+            if (currentTool !== 'laser' || laserPoints.length === 0) return;
+
+            for (let i = 0; i < laserPoints.length; i++) {
+                laserPoints[i].alpha -= 0.012;
+            }
+            laserPoints = laserPoints.filter(p => p.alpha > 0);
+
+            if (laserPoints.length < 2) return;
+
+            laserCtx.save();
+            laserCtx.lineCap = 'round';
+            laserCtx.lineJoin = 'round';
+
+            // Glow Pass
+            laserCtx.beginPath();
+            laserCtx.moveTo(laserPoints[0].x, laserPoints[0].y);
+            for (let i = 1; i < laserPoints.length; i++) {
+                laserCtx.lineTo(laserPoints[i].x, laserPoints[i].y);
+            }
+            laserCtx.strokeStyle = 'rgba(244, 63, 94, 0.45)';
+            laserCtx.lineWidth = 10;
+            laserCtx.shadowColor = '#f43f5e';
+            laserCtx.shadowBlur = 15;
+            laserCtx.stroke();
+
+            // Solid Bright Line Pass
+            laserCtx.beginPath();
+            laserCtx.moveTo(laserPoints[0].x, laserPoints[0].y);
+            for (let i = 1; i < laserPoints.length; i++) {
+                laserCtx.lineTo(laserPoints[i].x, laserPoints[i].y);
+            }
+            laserCtx.strokeStyle = '#f43f5e';
+            laserCtx.lineWidth = 3.5;
+            laserCtx.stroke();
+
+            const head = laserPoints[laserPoints.length - 1];
+            if (isLaserMouseDown && head) {
+                laserCtx.beginPath();
+                laserCtx.arc(head.x, head.y, 5, 0, Math.PI * 2);
+                laserCtx.fillStyle = '#ffffff';
+                laserCtx.shadowColor = '#f43f5e';
+                laserCtx.shadowBlur = 18;
+                laserCtx.fill();
+            }
+
+            laserCtx.restore();
+        }
+
+        function toggleTool(toolName) {
+            const viewport = document.getElementById('viewportContainer');
+            const btnLaser = document.getElementById('btnLaser');
+
+            if (currentTool === toolName) {
+                currentTool = null;
+                viewport.classList.remove('laser-active');
+                if (btnLaser) btnLaser.classList.remove('active');
+                if (controls) controls.enabled = true;
+                showToast("レーザーポインターをOFFにしました");
+            } else {
+                currentTool = toolName;
+                viewport.classList.add('laser-active');
+                if (btnLaser) btnLaser.classList.add('active');
+                if (controls) controls.enabled = false;
+                showToast("レーザーポインター: ドラッグして画面上に描画できます");
+            }
+        }
+
+        function resetCamera() {
+            if (!camera || !controls) return;
+            camera.position.set(4.8, 4.2, 7.2);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            showToast("正面視点にリセットしました");
+        }
+
+        function setTopView() {
+            if (!camera || !controls) return;
+            camera.position.set(0, 12, 0.001);
+            controls.target.set(0, 0, 0);
+            controls.update();
+            showToast("真上視点に切り替えました");
+        }
+
+        function toggleFullscreen3D() {
+            const container = document.getElementById('mainContainer');
+
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (container.requestFullscreen) {
+                    container.requestFullscreen();
+                } else if (container.webkitRequestFullscreen) {
+                    container.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        function handleFullscreenChange() {
+            const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
+            const container = document.getElementById('mainContainer');
+            const txtFs = document.getElementById('txtFullscreen');
+
+            if (isFS) {
+                container.classList.add('is-fullscreen-mode');
+                if (txtFs) txtFs.innerText = "解除";
+            } else {
+                container.classList.remove('is-fullscreen-mode');
+                if (txtFs) txtFs.innerText = "全画面";
+            }
+            setTimeout(onWindowResize, 100);
+        }
+
+        function handleBtnStartFromBeginning() {
+            document.getElementById('sliderSides').value = 4;
+            document.getElementById('sliderRadius').value = 2.0;
+            document.getElementById('sliderHeight').value = 4.0;
+            document.getElementById('chkEdgesOnly').checked = false;
+            document.getElementById('chkTransparent').checked = true;
+
+            isEdgesOnly = false;
+            isTransparent = true;
+
+            selectShape('prism');
+            resetCutter();
+            resetCamera();
+
+            if (currentTool === 'laser') {
+                toggleTool('laser');
+            }
+
+            showToast("初期状態に戻しました");
+        }
+
+        function handleBtnSnapshot() {
+            if (!renderer) return;
+            
+            renderer.render(scene, camera);
+            const dataUrl = renderer.domElement.toDataURL('image/png');
+
+            const link = document.getElementById('downloadLink') || document.createElement('a');
+            link.download = `3d-cross-section-${Date.now()}.png`;
+            link.href = dataUrl;
+            link.click();
+
+            showToast("画像をキャプチャして保存しました！");
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            if (!toast) return;
+            toast.innerText = message;
+            toast.style.opacity = '1';
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+            }, 2500);
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('canvas3dContainer');
+            if (container && camera && renderer) {
+                camera.aspect = container.clientWidth / container.clientHeight;
+                camera.updateProjectionMatrix();
+                renderer.setSize(container.clientWidth, container.clientHeight);
+            }
+            resizeLaserCanvas();
+            resize2DCanvas();
+            updateCutterFromUI();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            if (controls) controls.update();
+            if (renderer && scene && camera) {
+                renderer.render(scene, camera);
+            }
+
+            drawLaserTrail();
+        }
+    </script>
+</body>
+</html>
